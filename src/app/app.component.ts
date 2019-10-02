@@ -1,32 +1,138 @@
-import { Component } from '@angular/core';
+// tslint:disable no-console
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import {
+  BehaviorSubject,
+  empty,
+  interval,
+  merge,
+  ReplaySubject,
+  Subject
+} from 'rxjs';
+import {
+  bufferToggle,
+  concatAll,
+  map,
+  mapTo,
+  scan,
+  share,
+  shareReplay,
+  startWith,
+  switchMap,
+  switchMapTo,
+  takeUntil,
+  tap,
+  withLatestFrom
+} from 'rxjs/operators';
+
+export interface ICall {
+  message: string;
+  isMagic: boolean;
+}
 
 @Component({
   selector: 'app-root',
   template: `
-    <!--The content below is only a placeholder and can be replaced.-->
     <div style="text-align:center" class="content">
       <h1>
-        Welcome to {{title}}!
+        Observable Conditional Queuing
       </h1>
-      <span style="display: block">{{ title }} app is running!</span>
-      <img width="300" alt="Angular Logo" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTAgMjUwIj4KICAgIDxwYXRoIGZpbGw9IiNERDAwMzEiIGQ9Ik0xMjUgMzBMMzEuOSA2My4ybDE0LjIgMTIzLjFMMTI1IDIzMGw3OC45LTQzLjcgMTQuMi0xMjMuMXoiIC8+CiAgICA8cGF0aCBmaWxsPSIjQzMwMDJGIiBkPSJNMTI1IDMwdjIyLjItLjFWMjMwbDc4LjktNDMuNyAxNC4yLTEyMy4xTDEyNSAzMHoiIC8+CiAgICA8cGF0aCAgZmlsbD0iI0ZGRkZGRiIgZD0iTTEyNSA1Mi4xTDY2LjggMTgyLjZoMjEuN2wxMS43LTI5LjJoNDkuNGwxMS43IDI5LjJIMTgzTDEyNSA1Mi4xem0xNyA4My4zaC0zNGwxNy00MC45IDE3IDQwLjl6IiAvPgogIDwvc3ZnPg==">
     </div>
-    <h2>Here are some links to help you start: </h2>
-    <ul>
-      <li>
-        <h2><a target="_blank" rel="noopener" href="https://angular.io/tutorial">Tour of Heroes</a></h2>
-      </li>
-      <li>
-        <h2><a target="_blank" rel="noopener" href="https://angular.io/cli">CLI Documentation</a></h2>
-      </li>
-      <li>
-        <h2><a target="_blank" rel="noopener" href="https://blog.angular.io/">Angular blog</a></h2>
-      </li>
-    </ul>
-    
-  `,
-  styles: []
+    <button *ngIf="!running" type="button" (click)="start()">
+       Start
+    </button>
+    <button *ngIf="running" type="button" (click)="stop()">
+      Stop
+    </button>
+
+    <div *ngFor="let c of calls$ | async">
+     {{ c.message }}
+    </div>
+  `
 })
-export class AppComponent {
-  title = 'obs-queue';
+export class AppComponent implements OnInit, OnDestroy {
+  private counter = 0;
+  private onDestroy = new Subject<void>();
+
+  // tslint:disable member-ordering
+  public running = false;
+  public callSubject = new Subject<ICall>();
+  public calls$ = this.callSubject.pipe(
+    takeUntil(this.onDestroy),
+    scan((arr: ICall[], call: ICall) => {
+      return [...arr, call];
+    }, [])
+  );
+
+  private pause$ = new Subject<false>();
+  private resume$ = new Subject<true>();
+
+  constructor() {
+    /**
+     * NOTES:
+     *
+     * All incoming requests go into a Queue, regardless
+     * There's an internal consumer of this queue.
+     * this consumer "loops" over these and executes them in parallel until it finds a "magic" call
+     * Once it his a "magic" one, it
+     *
+     */
+    // start/stop should turn on/off the incoming regular url requests
+    // another button (addMagicCall) should add something that requires the custom queue logic.
+  }
+
+  ngOnInit() {
+    const interval$ = interval(1000).pipe(share());
+
+    // interval$.pipe(takeUntil(this.onDestroy)).subscribe((x: number) => {
+    //   console.log(`Interval ${x}`);
+    // });
+
+    const enabled$ = merge(this.pause$, this.resume$).pipe(
+      startWith(false),
+      tap(x => {
+        console.log('True?: ', x);
+      })
+      // bufferToggle(this.resume$, () => this.pause$),
+      // tap(x => {
+      //   console.log('POST-buffer: ', x);
+      // }),
+      // concatAll() // flatten the buffered array
+      // // This is causing it to re-subscribe to $interval, which is not what we want.
+      // switchMap((paused: boolean) => (paused ? interval$ : empty()))
+      // switchMap(b => interval$.pipe(map(num => `${b} - ${num}`)))
+    );
+
+    // just log out the ongoing interval with current status
+    interval$
+      .pipe(
+        withLatestFrom(enabled$),
+        map(([num, isEnabled]) => {
+          return `${isEnabled} ${num}`;
+        })
+      )
+      .subscribe(console.log);
+  }
+
+  ngOnDestroy() {
+    this.onDestroy.next();
+  }
+
+  start() {
+    console.info('Starting!');
+    this.running = true;
+    this.resume$.next(true);
+  }
+
+  stop() {
+    console.info('Stopping!');
+    this.running = false;
+    this.pause$.next(false);
+  }
+
+  private addCall(msg: string, isMagic: boolean) {
+    this.callSubject.next({
+      isMagic,
+      message: msg
+    });
+  }
 }
