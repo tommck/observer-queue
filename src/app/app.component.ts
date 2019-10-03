@@ -42,9 +42,7 @@ export interface ICall {
         Observable Conditional Queuing
       </h1>
     </div>
-    <div *ngFor="let c of calls$ | async">
-     {{ c.message }}
-    </div>
+    <button type="button" (click)="addMagicCall()">Add Magic!</button>
   `
 })
 export class AppComponent implements OnInit, OnDestroy {
