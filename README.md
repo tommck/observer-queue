@@ -18,26 +18,3 @@ would result in (each line is parallel calls):
     B
     A
     BBB
-
-## Potential Solutions
-
-### No Actual Queue
-
-1.  There's a "waitForMagic()" method that returns either a current
-    magic observable or noop()
-2.  when an incoming call comes in and it's "norma", the calling code gets:
-
-    ```typescript
-    waitForMagic().pipe(map(_x => defer(actualHttpCall)));
-    ```
-
-3.  If the incoming call is a magic one, it is wrapped with:
-
-    ```typescript
-    waitForMagic().pipe(
-      map(_x => defer(actualHttpCall)),
-      tap(x => setThisOneAsTheMagicOne(x))
-    );
-    ```
-
-asdf
