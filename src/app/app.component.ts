@@ -85,6 +85,12 @@ export class AppComponent implements OnInit, OnDestroy {
     );
   }
 
+  private processCall(call: ICall) {
+    console.info(
+      `>>>>>> Processing ${call.isMagic ? 'MAGIC ' : ''}${call.message}`
+    );
+  }
+
   ngOnDestroy() {
     this.onDestroy.next();
   }
