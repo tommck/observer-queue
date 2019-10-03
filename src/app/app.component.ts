@@ -3,8 +3,10 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import {
   BehaviorSubject,
   empty,
+  from,
   interval,
   merge,
+  Observable,
   ReplaySubject,
   Subject
 } from 'rxjs';
@@ -13,12 +15,15 @@ import {
   concatAll,
   map,
   mapTo,
+  mergeMap,
+  publish,
   scan,
   share,
   shareReplay,
   startWith,
   switchMap,
   switchMapTo,
+  take,
   takeUntil,
   tap,
   withLatestFrom
@@ -37,96 +42,57 @@ export interface ICall {
         Observable Conditional Queuing
       </h1>
     </div>
-    <button *ngIf="!running" type="button" (click)="start()">
-       Start
-    </button>
-    <button *ngIf="running" type="button" (click)="stop()">
-      Stop
-    </button>
-
     <div *ngFor="let c of calls$ | async">
      {{ c.message }}
     </div>
   `
 })
 export class AppComponent implements OnInit, OnDestroy {
-  private counter = 0;
   private onDestroy = new Subject<void>();
 
-  // tslint:disable member-ordering
-  public running = false;
+  // AKA "source"
   public callSubject = new Subject<ICall>();
-  public calls$ = this.callSubject.pipe(
-    takeUntil(this.onDestroy),
-    scan((arr: ICall[], call: ICall) => {
-      return [...arr, call];
-    }, [])
-  );
-
-  private pause$ = new Subject<false>();
-  private resume$ = new Subject<true>();
 
   constructor() {
-    /**
-     * NOTES:
-     *
-     * All incoming requests go into a Queue, regardless
-     * There's an internal consumer of this queue.
-     * this consumer "loops" over these and executes them in parallel until it finds a "magic" call
-     * Once it his a "magic" one, it
-     *
-     */
-    // start/stop should turn on/off the incoming regular url requests
-    // another button (addMagicCall) should add something that requires the custom queue logic.
+    // start the "normal" calls coming in
+    interval(1000)
+      .pipe(
+        take(500), // limit to 500 so it doesn't run forever
+        takeUntil(this.onDestroy)
+      )
+      .subscribe(n => this.addCall(`Call ${n}`, false));
   }
 
   ngOnInit() {
-    const interval$ = interval(1000).pipe(share());
+    const bufferEndSignal = new Subject<ICall>();
 
-    // interval$.pipe(takeUntil(this.onDestroy)).subscribe((x: number) => {
-    //   console.log(`Interval ${x}`);
-    // });
-
-    const enabled$ = merge(this.pause$, this.resume$).pipe(
-      startWith(false),
-      tap(x => {
-        console.log('True?: ', x);
-      })
-      // bufferToggle(this.resume$, () => this.pause$),
-      // tap(x => {
-      //   console.log('POST-buffer: ', x);
-      // }),
-      // concatAll() // flatten the buffered array
-      // // This is causing it to re-subscribe to $interval, which is not what we want.
-      // switchMap((paused: boolean) => (paused ? interval$ : empty()))
-      // switchMap(b => interval$.pipe(map(num => `${b} - ${num}`)))
+    const source: Observable<ICall> = this.callSubject.pipe(
+      publish(multicastedCalls$ =>
+        bufferToggle(multicastedCalls$, () => bufferEndSignal)
+      )
     );
 
-    // just log out the ongoing interval with current status
-    interval$
-      .pipe(
-        withLatestFrom(enabled$),
-        map(([num, isEnabled]) => {
-          return `${isEnabled} ${num}`;
-        })
+    source.pipe(
+      mergeMap(arr =>
+        from(arr).pipe(
+          map(val => [val, this.processCall(val)]),
+          tap(result => {
+            if (val.isMagic) {
+              bufferEndSignal.next(val);
+            }
+          }),
+          map(([val, result]) => result)
+        )
       )
-      .subscribe(console.log);
+    );
   }
 
   ngOnDestroy() {
     this.onDestroy.next();
   }
 
-  start() {
-    console.info('Starting!');
-    this.running = true;
-    this.resume$.next(true);
-  }
-
-  stop() {
-    console.info('Stopping!');
-    this.running = false;
-    this.pause$.next(false);
+  addMagicCall() {
+    this.addCall('MAGIC!', true);
   }
 
   private addCall(msg: string, isMagic: boolean) {
