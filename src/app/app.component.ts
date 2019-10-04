@@ -1,7 +1,7 @@
 // tslint:disable no-console
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { interval, Observable, of, Subject } from 'rxjs';
-import { take, takeUntil, tap } from 'rxjs/operators';
+import { map, take, takeUntil, tap } from 'rxjs/operators';
 import { magicConcat } from './magicConcat';
 
 export interface ICall {
@@ -24,7 +24,10 @@ export class AppComponent implements OnInit, OnDestroy {
   private onDestroy = new Subject<void>();
 
   // AKA "source"
-  public callSubject = new Subject<ICall>();
+  public incomingCallQueue = new Subject<{
+    call: ICall;
+    done: (result: any) => void;
+  }>();
   public calls$ = new Subject<string>();
 
   ngOnInit() {
@@ -38,13 +41,16 @@ export class AppComponent implements OnInit, OnDestroy {
       )
       .subscribe(n => this.addCall(`Call ${n}`, false));
 
-    this.callSubject
+    this.incomingCallQueue
       .pipe(
-        magicConcat((c: ICall) => c.isMagic, (c: ICall) => this.processCall(c))
+        takeUntil(this.onDestroy),
+        magicConcat(
+          ({ call }) => call.isMagic,
+          ({ call, done }) =>
+            this.processCall(call).pipe(map(result => ({ result, done })))
+        )
       )
-      .subscribe(c => {
-        this.processCall(c);
-      });
+      .subscribe(); // just subscribe to start it all
   }
 
   private processCall(call: ICall): Observable<any> {
@@ -66,9 +72,21 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private addCall(msg: string, isMagic: boolean) {
     console.debug(`Adding Call: ${msg}${isMagic ? ' - MAGIC' : ''}`);
-    this.callSubject.next({
-      isMagic,
-      message: msg
+
+    const callResult = new Subject();
+
+    this.incomingCallQueue.next({
+      call: {
+        isMagic,
+        message: msg
+      },
+      // tslint:disable-next-line: object-literal-sort-keys
+      done: result => {
+        callResult.next(result);
+        callResult.complete();
+      }
     });
+
+    return callResult.asObservable();
   }
 }
