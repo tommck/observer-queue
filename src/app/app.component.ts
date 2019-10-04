@@ -47,7 +47,7 @@ export class AppComponent implements OnInit, OnDestroy {
     // start the "normal" calls coming in
     interval(3000)
       .pipe(
-        take(5), // limit to 500 so it doesn't run forever
+        take(50), // limit to 500 so it doesn't run forever
         takeUntil(this.onDestroy)
       )
       .subscribe(n => {
@@ -55,8 +55,7 @@ export class AppComponent implements OnInit, OnDestroy {
         const id = `Call ${n}`;
         // tslint:disable-next-line: variable-name
         this.addCall(id, false).subscribe(_result => {
-          debugger;
-          this.logMessage(`??${id} - DONE`);
+          this.logMessage(`${id} - DONE`);
         });
       });
 
@@ -69,13 +68,15 @@ export class AppComponent implements OnInit, OnDestroy {
             this.processCall(call).pipe(map(result => ({ result, done })))
         )
       )
-      .subscribe(); // just subscribe to start it all
+      .subscribe(({ result, done }) => {
+        done(result);
+      });
   }
 
   private processCall(call: ICall): Observable<any> {
     const callId = `${call.isMagic ? 'MAGIC ' : ''}${call.message}`;
 
-    this.messages.push(callId);
+    this.logMessage(`${callId} - begin`);
 
     return of(callId).pipe(delay(call.isMagic ? 10000 : 1000));
   }
@@ -104,7 +105,6 @@ export class AppComponent implements OnInit, OnDestroy {
         },
         // tslint:disable-next-line: object-literal-sort-keys
         done: result => {
-          debugger;
           callResult.next(result);
           callResult.complete();
         }
