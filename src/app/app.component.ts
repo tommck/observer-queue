@@ -1,33 +1,8 @@
 // tslint:disable no-console
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import {
-  BehaviorSubject,
-  empty,
-  from,
-  interval,
-  merge,
-  Observable,
-  ReplaySubject,
-  Subject
-} from 'rxjs';
-import {
-  bufferToggle,
-  concatAll,
-  map,
-  mapTo,
-  mergeMap,
-  publish,
-  scan,
-  share,
-  shareReplay,
-  startWith,
-  switchMap,
-  switchMapTo,
-  take,
-  takeUntil,
-  tap,
-  withLatestFrom
-} from 'rxjs/operators';
+import { interval, Observable, of, Subject } from 'rxjs';
+import { take, takeUntil, tap } from 'rxjs/operators';
+import { magicConcat } from './magicConcat';
 
 export interface ICall {
   message: string;
@@ -50,45 +25,35 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // AKA "source"
   public callSubject = new Subject<ICall>();
+  public calls$ = new Subject<string>();
 
-  constructor() {
+  ngOnInit() {
+    console.warn('------------- BEGIN ----------------- ');
     // start the "normal" calls coming in
     interval(1000)
       .pipe(
         take(500), // limit to 500 so it doesn't run forever
-        takeUntil(this.onDestroy)
+        takeUntil(this.onDestroy),
+        tap(n => console.debug(`tap: ${n}`))
       )
       .subscribe(n => this.addCall(`Call ${n}`, false));
+
+    this.callSubject
+      .pipe(
+        magicConcat((c: ICall) => c.isMagic, (c: ICall) => this.processCall(c))
+      )
+      .subscribe(c => {
+        this.processCall(c);
+      });
   }
 
-  ngOnInit() {
-    const bufferEndSignal = new Subject<ICall>();
+  private processCall(call: ICall): Observable<any> {
+    const msg = `>>>>>> Processing ${call.isMagic ? 'MAGIC ' : ''}${
+      call.message
+    }`;
+    this.calls$.next(msg);
 
-    const source: Observable<ICall> = this.callSubject.pipe(
-      publish(multicastedCalls$ =>
-        bufferToggle(multicastedCalls$, () => bufferEndSignal)
-      )
-    );
-
-    source.pipe(
-      mergeMap(arr =>
-        from(arr).pipe(
-          map(val => [val, this.processCall(val)]),
-          tap(result => {
-            if (val.isMagic) {
-              bufferEndSignal.next(val);
-            }
-          }),
-          map(([val, result]) => result)
-        )
-      )
-    );
-  }
-
-  private processCall(call: ICall) {
-    console.info(
-      `>>>>>> Processing ${call.isMagic ? 'MAGIC ' : ''}${call.message}`
-    );
+    return of(msg);
   }
 
   ngOnDestroy() {
@@ -100,6 +65,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private addCall(msg: string, isMagic: boolean) {
+    console.debug(`Adding Call: ${msg}${isMagic ? ' - MAGIC' : ''}`);
     this.callSubject.next({
       isMagic,
       message: msg
