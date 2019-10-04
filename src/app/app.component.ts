@@ -1,7 +1,15 @@
 // tslint:disable no-console
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import { interval, Observable, of, Subject } from 'rxjs';
-import { map, take, takeUntil, tap } from 'rxjs/operators';
+import { interval, Observable, of, ReplaySubject, Subject } from 'rxjs';
+import {
+  concatAll,
+  delay,
+  map,
+  startWith,
+  take,
+  takeUntil,
+  tap
+} from 'rxjs/operators';
 import { magicConcat } from './magicConcat';
 
 export interface ICall {
@@ -18,6 +26,9 @@ export interface ICall {
       </h1>
     </div>
     <button type="button" (click)="addMagicCall()">Add Magic!</button>
+    <div *ngFor="let msg of messages">
+      {{msg}}
+    </div>
   `
 })
 export class AppComponent implements OnInit, OnDestroy {
@@ -28,18 +39,26 @@ export class AppComponent implements OnInit, OnDestroy {
     call: ICall;
     done: (result: any) => void;
   }>();
-  public calls$ = new Subject<string>();
+
+  public messages: string[] = [];
 
   ngOnInit() {
     console.warn('------------- BEGIN ----------------- ');
     // start the "normal" calls coming in
-    interval(1000)
+    interval(3000)
       .pipe(
-        take(500), // limit to 500 so it doesn't run forever
-        takeUntil(this.onDestroy),
-        tap(n => console.debug(`tap: ${n}`))
+        take(5), // limit to 500 so it doesn't run forever
+        takeUntil(this.onDestroy)
       )
-      .subscribe(n => this.addCall(`Call ${n}`, false));
+      .subscribe(n => {
+        // NOTE: This simulates client code.. this.http.get().subscribe() ...
+        const id = `Call ${n}`;
+        // tslint:disable-next-line: variable-name
+        this.addCall(id, false).subscribe(_result => {
+          debugger;
+          this.logMessage(`??${id} - DONE`);
+        });
+      });
 
     this.incomingCallQueue
       .pipe(
@@ -54,39 +73,60 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private processCall(call: ICall): Observable<any> {
-    const msg = `>>>>>> Processing ${call.isMagic ? 'MAGIC ' : ''}${
-      call.message
-    }`;
-    this.calls$.next(msg);
+    const callId = `${call.isMagic ? 'MAGIC ' : ''}${call.message}`;
 
-    return of(msg);
+    this.messages.push(callId);
+
+    return of(callId).pipe(delay(call.isMagic ? 10000 : 1000));
   }
 
   ngOnDestroy() {
     this.onDestroy.next();
   }
 
+  private magicCallCounter = 0;
+
   addMagicCall() {
-    this.addCall('MAGIC!', true);
+    const id = `Magic Call ${this.magicCallCounter++}`;
+    this.addCall(id, true).subscribe(_ => {
+      this.logMessage(`${id} DONE`);
+    });
   }
 
-  private addCall(msg: string, isMagic: boolean) {
-    console.debug(`Adding Call: ${msg}${isMagic ? ' - MAGIC' : ''}`);
+  private addCall(msg: string, isMagic: boolean): Observable<any> {
+    this.logMessage(`Adding: ${msg}`);
 
-    const callResult = new Subject();
+    return new Observable<any>(callResult => {
+      this.incomingCallQueue.next({
+        call: {
+          isMagic,
+          message: msg
+        },
+        // tslint:disable-next-line: object-literal-sort-keys
+        done: result => {
+          debugger;
+          callResult.next(result);
+          callResult.complete();
+        }
+      });
 
-    this.incomingCallQueue.next({
-      call: {
-        isMagic,
-        message: msg
-      },
-      // tslint:disable-next-line: object-literal-sort-keys
-      done: result => {
-        callResult.next(result);
-        callResult.complete();
-      }
+      // TODO: c
+      // return () => { ...teardown... };
+      //   this.callSubject
+      // .pipe(
+      //   magicConcat(
+      //     ({ val: ICall } ) => val.isMagic,
+      //     ({ val: ICall, done, cancel$ }) => cancel$.getValue() ? this.processCall(val).pipe(
+      //       takeUntil(cancel$.pipe(filter(e => e)))
+      //       map(result => ({ result, done }))) : EMPTY
+      //     )
+      // ).subscribe(({result, done}) => {
+      //   done(result);
+      // });
     });
+  }
 
-    return callResult.asObservable();
+  private logMessage(str: string) {
+    this.messages.push(str);
   }
 }
