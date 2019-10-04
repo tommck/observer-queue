@@ -9,7 +9,7 @@ import {
   Subject
 } from 'rxjs';
 import { delay, filter, map, take, takeUntil } from 'rxjs/operators';
-import { magicConcat } from './magicConcat';
+import { blockingMergeMap } from './blocking-merge-map';
 
 export interface ICall {
   message: string;
@@ -62,7 +62,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.incomingCallQueue
       .pipe(
         takeUntil(this.onDestroy),
-        magicConcat(
+        blockingMergeMap(
           ({ call }) => call.isMagic,
           ({ call, done, cancel$ }) =>
             cancel$.getValue()

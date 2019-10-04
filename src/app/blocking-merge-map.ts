@@ -16,7 +16,7 @@ import {
 
 // tslint:disable
 
-export function magicConcat<T, O extends ObservableInput<any>>(
+export function blockingMergeMap<T, O extends ObservableInput<any>>(
   isMagic: (value: T, index: number) => boolean,
   project: (value: T, index: number) => O,
   scheduler?: Scheduler
