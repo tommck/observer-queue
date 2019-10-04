@@ -1,15 +1,14 @@
 // tslint:disable no-console
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import { interval, Observable, of, ReplaySubject, Subject } from 'rxjs';
 import {
-  concatAll,
-  delay,
-  map,
-  startWith,
-  take,
-  takeUntil,
-  tap
-} from 'rxjs/operators';
+  BehaviorSubject,
+  EMPTY,
+  interval,
+  Observable,
+  of,
+  Subject
+} from 'rxjs';
+import { delay, filter, map, take, takeUntil } from 'rxjs/operators';
 import { magicConcat } from './magicConcat';
 
 export interface ICall {
@@ -38,6 +37,7 @@ export class AppComponent implements OnInit, OnDestroy {
   public incomingCallQueue = new Subject<{
     call: ICall;
     done: (result: any) => void;
+    cancel$: BehaviorSubject<boolean>;
   }>();
 
   public messages: string[] = [];
@@ -64,8 +64,13 @@ export class AppComponent implements OnInit, OnDestroy {
         takeUntil(this.onDestroy),
         magicConcat(
           ({ call }) => call.isMagic,
-          ({ call, done }) =>
-            this.processCall(call).pipe(map(result => ({ result, done })))
+          ({ call, done, cancel$ }) =>
+            cancel$.getValue()
+              ? EMPTY
+              : this.processCall(call).pipe(
+                  takeUntil(cancel$.pipe(filter(e => e))),
+                  map(result => ({ result, done }))
+                )
         )
       )
       .subscribe(({ result, done }) => {
@@ -97,32 +102,22 @@ export class AppComponent implements OnInit, OnDestroy {
   private addCall(msg: string, isMagic: boolean): Observable<any> {
     this.logMessage(`Adding: ${msg}`);
 
-    return new Observable<any>(callResult => {
+    return new Observable(r => {
+      const cancel$ = new BehaviorSubject(false);
       this.incomingCallQueue.next({
         call: {
           isMagic,
           message: msg
         },
-        // tslint:disable-next-line: object-literal-sort-keys
+        cancel$,
         done: result => {
-          callResult.next(result);
-          callResult.complete();
+          r.next(result);
+          r.complete();
         }
       });
-
-      // TODO: c
-      // return () => { ...teardown... };
-      //   this.callSubject
-      // .pipe(
-      //   magicConcat(
-      //     ({ val: ICall } ) => val.isMagic,
-      //     ({ val: ICall, done, cancel$ }) => cancel$.getValue() ? this.processCall(val).pipe(
-      //       takeUntil(cancel$.pipe(filter(e => e)))
-      //       map(result => ({ result, done }))) : EMPTY
-      //     )
-      // ).subscribe(({result, done}) => {
-      //   done(result);
-      // });
+      return () => {
+        cancel$.next(true);
+      };
     });
   }
 
